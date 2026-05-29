@@ -1,0 +1,605 @@
+/**
+ * Deterministic mock AI service for local development and keyless demos.
+ * It returns Markdown that includes a ZIP-ready JSON file map.
+ */
+
+interface MockProjectFile {
+  path: string;
+  content: string;
+}
+
+function extract(pattern: RegExp, text: string, fallback = ''): string {
+  return text.match(pattern)?.[1]?.trim() || fallback;
+}
+
+function titleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'friends-project'
+  );
+}
+
+function extractProjectContext(systemPrompt: string, userMessage: string) {
+  const title =
+    extract(/\*\*Title\*\*:\s*(.+)/, systemPrompt) ||
+    extract(/Project:\s*(.+)/, systemPrompt) ||
+    extract(/Project:\s*(.+)/, userMessage, 'Untitled Project');
+  const workflowType =
+    extract(/\*\*Workflow Type\*\*:\s*(.+)/, systemPrompt) ||
+    extract(/Workflow:\s*(.+)/, systemPrompt, 'custom');
+  const description =
+    extract(/\*\*Description\*\*:\s*([\s\S]+?)(?:\n\n##|\n\nYour Assignment|$)/, systemPrompt) ||
+    extract(/Description:\s*(.+)/, systemPrompt) ||
+    extract(/Goal:\s*([\s\S]+?)(?:\n\n|$)/, userMessage, 'No description provided.');
+  const role = extract(/\*\*Your Role\*\*:\s*(.+)/, systemPrompt, 'Compiler Agent');
+  const name = extract(/\*\*Your Name\*\*:\s*(.+)/, systemPrompt, role);
+  const task = extract(/\*\*Your Task\*\*:\s*(.+)/, systemPrompt) || extract(/Complete your specific task:\s*(.+)/, userMessage);
+
+  return { title, workflowType, description, role, name, task };
+}
+
+function renderSourcePackage(title: string, intro: string, files: MockProjectFile[]): string {
+  return `# ${title} - Full Source Code Package
+
+${intro}
+
+## Preview Instructions
+1. Download **Export Full Source Code ZIP**.
+2. Unzip the archive.
+3. Run \`cd ${slugify(title)}\`.
+4. Run \`npm install\`.
+5. Run \`npm run dev\`.
+6. Open \`http://localhost:3000\`.
+
+## Project File Map
+\`\`\`json
+${JSON.stringify({ files }, null, 2)}
+\`\`\`
+`;
+}
+
+function nextBaseFiles(projectName: string): MockProjectFile[] {
+  const packageName = slugify(projectName);
+
+  return [
+    {
+      path: 'package.json',
+      content: JSON.stringify(
+        {
+          name: packageName,
+          version: '1.0.0',
+          private: true,
+          scripts: {
+            dev: 'next dev',
+            build: 'next build',
+            start: 'next start',
+          },
+          dependencies: {
+            '@types/node': '^20.14.0',
+            '@types/react': '^18.3.0',
+            '@types/react-dom': '^18.3.0',
+            autoprefixer: '^10.4.20',
+            next: '^16.2.6',
+            postcss: '^8.4.38',
+            react: '^18.3.1',
+            'react-dom': '^18.3.1',
+            tailwindcss: '^3.4.4',
+            typescript: '^5.4.5',
+          },
+          devDependencies: {},
+        },
+        null,
+        2
+      ),
+    },
+    {
+      path: 'next.config.js',
+      content: `/** @type {import('next').NextConfig} */
+const nextConfig = {};
+
+module.exports = nextConfig;
+`,
+    },
+    {
+      path: 'tsconfig.json',
+      content: JSON.stringify(
+        {
+          compilerOptions: {
+            target: 'es5',
+            lib: ['dom', 'dom.iterable', 'esnext'],
+            allowJs: true,
+            skipLibCheck: true,
+            strict: true,
+            noEmit: true,
+            esModuleInterop: true,
+            module: 'esnext',
+            moduleResolution: 'bundler',
+            resolveJsonModule: true,
+            isolatedModules: true,
+            jsx: 'preserve',
+            incremental: true,
+            plugins: [{ name: 'next' }],
+            paths: { '@/*': ['./*'] },
+          },
+          include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'],
+          exclude: ['node_modules'],
+        },
+        null,
+        2
+      ),
+    },
+    {
+      path: 'tailwind.config.ts',
+      content: `import type { Config } from 'tailwindcss';
+
+const config: Config = {
+  content: ['./app/**/*.{js,ts,jsx,tsx}', './components/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {
+      boxShadow: {
+        soft: '0 24px 80px rgba(15, 23, 42, 0.12)',
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;
+`,
+    },
+    {
+      path: 'postcss.config.js',
+      content: `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+`,
+    },
+    {
+      path: '.env.example',
+      content: '# Add environment variables here if this project connects to APIs later.\n',
+    },
+  ];
+}
+
+function createNextLandingFiles(context: ReturnType<typeof extractProjectContext>, variant: 'fitness' | 'startup' | 'student' | 'custom'): MockProjectFile[] {
+  const title = context.title || 'Generated App';
+  const description = context.description || 'A complete project generated by FRIENDS.';
+  const brand = variant === 'fitness' ? 'PulseFit' : title;
+  const eyebrow =
+    variant === 'startup'
+      ? 'Launch-ready startup MVP'
+      : variant === 'student'
+        ? 'Student project scaffold'
+        : variant === 'custom'
+          ? 'Custom agent build'
+          : 'Fitness plans, coaching, and accountability';
+  const heroTitle =
+    variant === 'fitness'
+      ? 'Build strength with workouts that fit your life.'
+      : variant === 'startup'
+        ? 'Turn the idea into a launch-ready MVP.'
+        : variant === 'student'
+          ? 'A complete project scaffold ready to build and present.'
+          : 'A focused workspace generated from your custom agents.';
+
+  return [
+    ...nextBaseFiles(title),
+    {
+      path: 'app/layout.tsx',
+      content: `import type { Metadata } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: ${JSON.stringify(title)},
+  description: ${JSON.stringify(description)},
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
+`,
+    },
+    {
+      path: 'app/page.tsx',
+      content: `import Navbar from '@/components/Navbar';
+import Hero from '@/components/Hero';
+import Features from '@/components/Features';
+import TrainerSection from '@/components/TrainerSection';
+import Pricing from '@/components/Pricing';
+import Testimonials from '@/components/Testimonials';
+import CTA from '@/components/CTA';
+import Footer from '@/components/Footer';
+
+export default function Home() {
+  return (
+    <main className="min-h-screen bg-slate-950 text-white">
+      <Navbar />
+      <Hero />
+      <Features />
+      <TrainerSection />
+      <Pricing />
+      <Testimonials />
+      <CTA />
+      <Footer />
+    </main>
+  );
+}
+`,
+    },
+    {
+      path: 'app/globals.css',
+      content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: #020617;
+  color: #f8fafc;
+}
+
+.section-shell {
+  @apply mx-auto w-full max-w-7xl px-6 py-20 sm:px-8;
+}
+`,
+    },
+    {
+      path: 'components/Navbar.tsx',
+      content: `const links = ['Features', 'Trainers', 'Pricing', 'Stories'];
+
+export default function Navbar() {
+  return (
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8">
+        <a href="#" className="text-xl font-black tracking-tight">${brand}</a>
+        <div className="hidden items-center gap-8 md:flex">
+          {links.map((link) => (
+            <a key={link} href={\`#\${link.toLowerCase()}\`} className="text-sm text-slate-300 transition hover:text-white">
+              {link}
+            </a>
+          ))}
+        </div>
+        <a href="#pricing" className="rounded-full bg-lime-400 px-5 py-2 text-sm font-bold text-slate-950 transition hover:bg-lime-300">
+          Start free
+        </a>
+      </nav>
+    </header>
+  );
+}
+`,
+    },
+    {
+      path: 'components/Hero.tsx',
+      content: `export default function Hero() {
+  return (
+    <section className="section-shell grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+      <div>
+        <p className="mb-4 inline-flex rounded-full border border-lime-300/30 bg-lime-300/10 px-4 py-2 text-sm font-semibold text-lime-200">
+          ${eyebrow}
+        </p>
+        <h1 className="max-w-4xl text-5xl font-black leading-tight tracking-tight sm:text-7xl">
+          ${heroTitle}
+        </h1>
+        <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
+          ${description}
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <a href="#pricing" className="rounded-full bg-lime-400 px-7 py-4 text-center font-bold text-slate-950 transition hover:bg-lime-300">
+            View plans
+          </a>
+          <a href="#features" className="rounded-full border border-white/15 px-7 py-4 text-center font-bold text-white transition hover:bg-white/10">
+            Explore features
+          </a>
+        </div>
+      </div>
+      <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-soft">
+        <div className="rounded-[1.5rem] bg-gradient-to-br from-lime-300 via-emerald-400 to-cyan-400 p-1">
+          <div className="rounded-[1.35rem] bg-slate-950 p-6">
+            <p className="text-sm text-slate-400">Today&apos;s focus</p>
+            <h2 className="mb-8 text-2xl font-black">${title}</h2>
+            {['Plan', 'Build', 'Launch'].map((item, index) => (
+              <div key={item} className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="flex items-center gap-4">
+                  <span className="grid h-10 w-10 place-items-center rounded-full bg-lime-400 font-black text-slate-950">{index + 1}</span>
+                  <div>
+                    <p className="font-bold">{item}</p>
+                    <p className="text-sm text-slate-400">Generated workflow section</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/Features.tsx',
+      content: `const features = [
+  ['Guided plans', 'Clear steps and sections generated from the user prompt.'],
+  ['Responsive UI', 'Modern layouts that work on mobile, tablet, and desktop.'],
+  ['Ready to extend', 'Clean components make it easy to add API routes or dashboards.'],
+];
+
+export default function Features() {
+  return (
+    <section id="features" className="section-shell">
+      <div className="mb-10 max-w-3xl">
+        <p className="font-bold uppercase tracking-[0.3em] text-lime-300">Features</p>
+        <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Everything needed for a polished first version.</h2>
+      </div>
+      <div className="grid gap-5 md:grid-cols-3">
+        {features.map(([title, body]) => (
+          <article key={title} className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+            <div className="mb-6 h-12 w-12 rounded-2xl bg-lime-400" />
+            <h3 className="text-xl font-black">{title}</h3>
+            <p className="mt-3 leading-7 text-slate-300">{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/TrainerSection.tsx',
+      content: `const cards = ['Expert guidance', 'Personalized path', 'Weekly momentum'];
+
+export default function TrainerSection() {
+  return (
+    <section id="trainers" className="section-shell grid gap-10 lg:grid-cols-2">
+      <div>
+        <p className="font-bold uppercase tracking-[0.3em] text-cyan-300">Highlights</p>
+        <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Built from the prompt, ready for iteration.</h2>
+        <p className="mt-5 text-lg leading-8 text-slate-300">
+          Use these components as the starting point, then customize copy, data, and integrations.
+        </p>
+      </div>
+      <div className="grid gap-4">
+        {cards.map((card) => (
+          <div key={card} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+            <p className="text-xl font-black">{card}</p>
+            <p className="mt-2 text-slate-400">A focused section that can be expanded into real product functionality.</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/Pricing.tsx',
+      content: `const plans = [
+  ['Starter', '$0', 'Explore the core experience'],
+  ['Pro', '$19', 'Unlock advanced workflows'],
+  ['Team', '$49', 'Collaborate with support and priority features'],
+];
+
+export default function Pricing() {
+  return (
+    <section id="pricing" className="section-shell">
+      <div className="mb-10 text-center">
+        <p className="font-bold uppercase tracking-[0.3em] text-lime-300">Pricing</p>
+        <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Simple plans for the first launch.</h2>
+      </div>
+      <div className="grid gap-5 md:grid-cols-3">
+        {plans.map(([name, price, detail]) => (
+          <article key={name} className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+            <h3 className="text-2xl font-black">{name}</h3>
+            <p className="mt-4 text-4xl font-black text-lime-300">{price}<span className="text-base text-slate-400">/mo</span></p>
+            <p className="mt-4 min-h-14 text-slate-300">{detail}</p>
+            <a href="#" className="mt-6 block rounded-full bg-white px-5 py-3 text-center font-bold text-slate-950 transition hover:bg-lime-300">
+              Choose {name}
+            </a>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/Testimonials.tsx',
+      content: `const testimonials = [
+  ['The generated project gave me a real starting point instead of just notes.', 'Aarav, Founder'],
+  ['I could run it locally and start editing components immediately.', 'Maya, Student Developer'],
+];
+
+export default function Testimonials() {
+  return (
+    <section id="stories" className="section-shell">
+      <div className="grid gap-5 md:grid-cols-2">
+        {testimonials.map(([quote, name]) => (
+          <figure key={name} className="rounded-3xl border border-white/10 bg-white/[0.04] p-7">
+            <blockquote className="text-2xl font-bold leading-snug">&ldquo;{quote}&rdquo;</blockquote>
+            <figcaption className="mt-5 text-slate-400">{name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/CTA.tsx',
+      content: `export default function CTA() {
+  return (
+    <section className="section-shell">
+      <div className="rounded-[2rem] bg-lime-400 p-8 text-center text-slate-950 sm:p-14">
+        <h2 className="text-4xl font-black tracking-tight sm:text-5xl">Ready to customize the project?</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-800">
+          Edit the components, connect APIs, and deploy the app when the first version is ready.
+        </p>
+        <a href="#pricing" className="mt-8 inline-flex rounded-full bg-slate-950 px-8 py-4 font-bold text-white transition hover:bg-slate-800">
+          Get started
+        </a>
+      </div>
+    </section>
+  );
+}
+`,
+    },
+    {
+      path: 'components/Footer.tsx',
+      content: `export default function Footer() {
+  return (
+    <footer className="border-t border-white/10 px-6 py-10 text-center text-sm text-slate-500">
+      <p>${brand} - Generated by FRIENDS.</p>
+    </footer>
+  );
+}
+`,
+    },
+    {
+      path: 'README.md',
+      content: `# ${title}
+
+${description}
+
+## Getting Started
+
+Run:
+
+    npm install
+    npm run dev
+
+Open http://localhost:3000 in your browser.
+
+## Included
+- Next.js App Router
+- Tailwind CSS
+- Responsive navbar
+- Hero section
+- Features section
+- Pricing section
+- Testimonials section
+- CTA section
+- Footer
+- Supporting docs in the docs folder
+
+## Notes
+This project was generated by FRIENDS as a runnable source-code package.
+`,
+    },
+  ];
+}
+
+function supportingDocs(context: ReturnType<typeof extractProjectContext>, workflow: string): MockProjectFile[] {
+  const title = context.title || 'Generated Project';
+  const description = context.description || 'Generated by FRIENDS.';
+
+  if (workflow === 'startup') {
+    return [
+      { path: 'docs/business-plan.md', content: `# Business Plan - ${title}\n\n## Problem\n${description}\n\n## MVP\nLaunch a focused landing page, collect leads, validate demand, and build the core workflow.\n` },
+      { path: 'docs/pitch-deck-outline.md', content: `# Pitch Deck Outline - ${title}\n\n1. Problem\n2. Solution\n3. Market\n4. Product\n5. Business model\n6. Go-to-market\n7. Roadmap\n8. Ask\n` },
+      { path: 'docs/go-to-market.md', content: `# Go-To-Market - ${title}\n\nStart with founder-led outreach, niche communities, landing page validation, and early adopter interviews.\n` },
+    ];
+  }
+
+  if (workflow === 'student') {
+    return [
+      { path: 'docs/project-report.md', content: `# Project Report - ${title}\n\n## Abstract\n${description}\n\n## Methodology\nRequirement analysis, design, implementation, testing, and documentation.\n` },
+      { path: 'docs/viva-questions.md', content: `# Viva Questions - ${title}\n\n1. What problem does this project solve?\n2. Explain the architecture.\n3. What validations are included?\n4. How can it be improved?\n` },
+      { path: 'docs/resume-points.md', content: `# Resume Points - ${title}\n\n- Built a runnable ${title} project using Next.js and Tailwind CSS.\n- Designed reusable components and documented setup steps.\n` },
+    ];
+  }
+
+  return [
+    { path: 'docs/final-output.md', content: `# Final Output - ${title}\n\n${description}\n` },
+    { path: 'docs/agent-plan.md', content: `# Agent Plan - ${title}\n\nUse custom agents to refine features, code, QA, and documentation.\n` },
+  ];
+}
+
+function sourcePackageForWorkflow(context: ReturnType<typeof extractProjectContext>): string {
+  const workflow = context.workflowType;
+  const variant =
+    workflow === 'startup'
+      ? 'startup'
+      : workflow === 'student'
+        ? 'student'
+        : workflow === 'custom'
+          ? 'custom'
+          : 'fitness';
+  const files = [...createNextLandingFiles(context, variant), ...supportingDocs(context, workflow)];
+
+  return renderSourcePackage(
+    context.title,
+    'This package contains runnable Next.js source code plus supporting documentation. The ZIP is intended to be installed and run locally.',
+    files
+  );
+}
+
+function textOnlyAgentOutput(context: ReturnType<typeof extractProjectContext>): string {
+  return `# ${context.name} Output
+
+## Role
+${context.role}
+
+## Project Context
+- Title: ${context.title}
+- Workflow: ${titleCase(context.workflowType)}
+- Brief: ${context.description}
+
+## Task Response
+${context.task || 'Create a useful project deliverable.'}
+
+## Deliverables
+- Requirements and feature decisions for ${context.title}
+- Implementation notes for downstream code generation
+- Risks, assumptions, and validation steps
+`;
+}
+
+export function generateMockAgentOutput(systemPrompt: string, userMessage: string): string {
+  const context = extractProjectContext(systemPrompt, userMessage);
+
+  if (/Compiler Agent/i.test(systemPrompt)) {
+    return sourcePackageForWorkflow(context);
+  }
+
+  return textOnlyAgentOutput(context);
+}
+
+export function generateMockClarifyingQuestions(title: string, workflowType: string, description: string): string[] {
+  const label = titleCase(workflowType || 'custom');
+  return [
+    `Who is the primary audience for "${title}"?`,
+    `What is the most important outcome you want from this ${label} project: "${description}"?`,
+    'Are there required technologies, constraints, or platforms the agents should respect?',
+    'What should be considered out of scope for the first version?',
+  ];
+}
