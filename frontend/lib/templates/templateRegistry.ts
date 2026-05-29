@@ -53,19 +53,20 @@ const nextPackage = (name: string) =>
         lint: 'next lint',
       },
       dependencies: {
-        '@tailwindcss/postcss': 'latest',
-        '@types/node': 'latest',
-        '@types/react': 'latest',
-        '@types/react-dom': 'latest',
-        next: 'latest',
-        postcss: 'latest',
-        react: 'latest',
-        'react-dom': 'latest',
-        tailwindcss: 'latest',
-        typescript: 'latest',
-        'lucide-react': 'latest',
+        next: '^14.2.4',
+        react: '^18.3.1',
+        'react-dom': '^18.3.1',
+        'lucide-react': '^0.395.0',
       },
-      devDependencies: {},
+      devDependencies: {
+        '@types/node': '^20.14.2',
+        '@types/react': '^18.3.3',
+        '@types/react-dom': '^18.3.0',
+        autoprefixer: '^10.4.20',
+        postcss: '^8.4.49',
+        tailwindcss: '^3.4.17',
+        typescript: '^5.6.3',
+      },
     },
     null,
     2,
@@ -103,22 +104,20 @@ const tsConfig = JSON.stringify(
   2,
 );
 
-const tailwindConfig = `import type { Config } from 'tailwindcss';
-
-const config: Config = {
+const tailwindConfig = `/** @type {import('tailwindcss').Config} */
+module.exports = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
     extend: {},
   },
   plugins: [],
 };
-
-export default config;
 `;
 
-const postcssConfig = `export default {
+const postcssConfig = `module.exports = {
   plugins: {
-    "@tailwindcss/postcss": {},
+    tailwindcss: {},
+    autoprefixer: {},
   },
 };
 `;
@@ -141,7 +140,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 }
 `;
 
-const globalsCss = `@import "tailwindcss";
+const globalsCss = `@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   color: #0f172a;
@@ -169,8 +170,8 @@ function baseNextFiles(name: string, pageComponent: string, readme: string): Rec
     'package.json': nextPackage(name.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
     'next.config.js': nextConfig,
     'tsconfig.json': tsConfig,
-    'tailwind.config.ts': tailwindConfig,
-    'postcss.config.mjs': postcssConfig,
+    'tailwind.config.js': tailwindConfig,
+    'postcss.config.js': postcssConfig,
     'app/layout.tsx': layoutFile(name),
     'app/page.tsx': pageComponent,
     'app/globals.css': globalsCss,
@@ -954,7 +955,7 @@ export const templateRegistry: ProjectTemplate[] = [
     components: ['Chatbot', 'ChatMessageList', 'PromptSuggestions'],
     logic: ['sendMessage()', 'createAssistantReply()', 'message history state', 'empty prompt validation'],
     forbiddenMistakes: [
-      'Do not use Tailwind v3 PostCSS config with Tailwind v4',
+      'Do not use Tailwind v4-only @tailwindcss/postcss config',
       'Do not include ambulance, PDF notes, or expense tracker copy',
       'Do not overwrite the FRIENDS platform homepage',
     ],

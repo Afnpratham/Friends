@@ -204,10 +204,10 @@ function validateFiles(files: Record<string, string>, template: ProjectTemplate)
       const parsedPackage = JSON.parse(packageJson) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string>; scripts?: Record<string, string> };
       const dependencies = { ...(parsedPackage.dependencies ?? {}), ...(parsedPackage.devDependencies ?? {}) };
 
-      if (dependencies.tailwindcss && dependencies['@tailwindcss/postcss'] && dependencies.postcss) {
-        report.push('Tailwind v4 dependencies exist: tailwindcss, @tailwindcss/postcss, and postcss.');
+      if (dependencies.tailwindcss && dependencies.postcss && dependencies.autoprefixer && !dependencies['@tailwindcss/postcss']) {
+        report.push('Tailwind v3 dependencies exist: tailwindcss, postcss, and autoprefixer.');
       } else {
-        errors.push('Tailwind v4 dependency set is incomplete. Expected tailwindcss, @tailwindcss/postcss, and postcss.');
+        errors.push('Tailwind dependency set is invalid. Expected tailwindcss, postcss, and autoprefixer without @tailwindcss/postcss.');
       }
 
       if (parsedPackage.scripts?.build) {
@@ -220,28 +220,28 @@ function validateFiles(files: Record<string, string>, template: ProjectTemplate)
     }
   }
 
-  const postcssConfig = files['postcss.config.mjs'] ?? files['postcss.config.js'];
-  if (postcssConfig?.includes('"@tailwindcss/postcss"') || postcssConfig?.includes("'@tailwindcss/postcss'")) {
-    report.push('PostCSS config uses @tailwindcss/postcss for Tailwind v4.');
+  const postcssConfig = files['postcss.config.js'] ?? files['postcss.config.mjs'];
+  if (postcssConfig && /(^|[{\s,])tailwindcss\s*:/.test(postcssConfig) && /(^|[{\s,])autoprefixer\s*:/.test(postcssConfig)) {
+    report.push('PostCSS config uses tailwindcss and autoprefixer for Tailwind v3.');
   } else {
-    errors.push('PostCSS config must use @tailwindcss/postcss for Tailwind v4.');
+    errors.push('PostCSS config must use tailwindcss and autoprefixer for Tailwind v3.');
   }
 
-  if (postcssConfig && /(^|[{\s,])tailwindcss\s*:/.test(postcssConfig)) {
-    errors.push('PostCSS config uses tailwindcss directly, which is invalid for Tailwind v4.');
+  if (postcssConfig?.includes('"@tailwindcss/postcss"') || postcssConfig?.includes("'@tailwindcss/postcss'")) {
+    errors.push('PostCSS config uses @tailwindcss/postcss, which is not used by this Tailwind v3 project.');
   } else {
-    report.push('PostCSS config does not use tailwindcss directly.');
+    report.push('PostCSS config does not use @tailwindcss/postcss.');
   }
 
   const globalsCss = files['app/globals.css'] ?? '';
-  if (globalsCss.includes('@import "tailwindcss";') || globalsCss.includes("@import 'tailwindcss';")) {
-    report.push('app/globals.css uses the Tailwind v4 import.');
+  if (/@tailwind\s+base/.test(globalsCss) && /@tailwind\s+components/.test(globalsCss) && /@tailwind\s+utilities/.test(globalsCss)) {
+    report.push('app/globals.css uses Tailwind v3 directives.');
   } else {
-    errors.push('app/globals.css must use @import "tailwindcss"; for Tailwind v4.');
+    errors.push('app/globals.css must include @tailwind base, @tailwind components, and @tailwind utilities.');
   }
 
-  if (/@tailwind\s+(base|components|utilities)/.test(globalsCss)) {
-    errors.push('app/globals.css uses Tailwind v3 @tailwind directives instead of the Tailwind v4 import.');
+  if (globalsCss.includes('@import "tailwindcss";') || globalsCss.includes("@import 'tailwindcss';")) {
+    errors.push('app/globals.css uses the Tailwind v4 import instead of Tailwind v3 directives.');
   }
 
   if (files['package.json']) {
@@ -267,43 +267,62 @@ function validateFiles(files: Record<string, string>, template: ProjectTemplate)
 }
 
 function repairFiles(template: ProjectTemplate) {
-  return repairTailwindV4Files({ ...getTemplateById(template.id).files });
+  return repairTailwindV3Files({ ...getTemplateById(template.id).files });
 }
 
-function repairTailwindV4Files(files: Record<string, string>) {
+function repairTailwindV3Files(files: Record<string, string>) {
   const nextFiles = { ...files };
 
   if (nextFiles['package.json']) {
     const parsedPackage = JSON.parse(nextFiles['package.json']) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
     parsedPackage.dependencies = {
       ...(parsedPackage.dependencies ?? {}),
-      tailwindcss: parsedPackage.dependencies?.tailwindcss ?? 'latest',
-      '@tailwindcss/postcss': parsedPackage.dependencies?.['@tailwindcss/postcss'] ?? 'latest',
-      postcss: parsedPackage.dependencies?.postcss ?? 'latest',
     };
+    delete parsedPackage.dependencies['@tailwindcss/postcss'];
+    delete parsedPackage.dependencies.tailwindcss;
+    delete parsedPackage.dependencies.postcss;
     delete parsedPackage.dependencies.autoprefixer;
-    if (parsedPackage.devDependencies) {
-      delete parsedPackage.devDependencies.autoprefixer;
-    }
+    parsedPackage.devDependencies = {
+      ...(parsedPackage.devDependencies ?? {}),
+      tailwindcss: parsedPackage.devDependencies?.tailwindcss ?? '^3.4.17',
+      postcss: parsedPackage.devDependencies?.postcss ?? '^8.4.49',
+      autoprefixer: parsedPackage.devDependencies?.autoprefixer ?? '^10.4.20',
+    };
+    delete parsedPackage.devDependencies['@tailwindcss/postcss'];
     nextFiles['package.json'] = JSON.stringify(parsedPackage, null, 2);
   }
 
-  delete nextFiles['postcss.config.js'];
-  nextFiles['postcss.config.mjs'] = `export default {
+  delete nextFiles['postcss.config.mjs'];
+  nextFiles['postcss.config.js'] = `module.exports = {
   plugins: {
-    "@tailwindcss/postcss": {},
+    tailwindcss: {},
+    autoprefixer: {},
   },
 };
 `;
 
-  nextFiles['app/globals.css'] = nextFiles['app/globals.css']?.replace(/@tailwind base;\s*@tailwind components;\s*@tailwind utilities;/, '@import "tailwindcss";') ?? '@import "tailwindcss";\n';
+  if (nextFiles['tailwind.config.ts']) {
+    delete nextFiles['tailwind.config.ts'];
+  }
+
+  nextFiles['tailwind.config.js'] = `/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+`;
+
+  nextFiles['app/globals.css'] = nextFiles['app/globals.css']?.replace(/@import\s+["']tailwindcss["'];/, '@tailwind base;\n@tailwind components;\n@tailwind utilities;') ?? '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n';
 
   return nextFiles;
 }
 
 export function repairTailwindPostcssBuildError(files: Record<string, string>, buildLog: string) {
-  if (buildLog.includes('trying to use `tailwindcss` directly as a PostCSS plugin')) {
-    return repairTailwindV4Files(files);
+  if (buildLog.includes('@tailwindcss/postcss') || buildLog.includes('ENOENT')) {
+    return repairTailwindV3Files(files);
   }
 
   return files;
