@@ -1,140 +1,183 @@
-# PDF Notes Converter
+# FRIENDS
 
-A functional Next.js app that turns uploaded text-based PDFs into structured study notes. The app extracts real PDF text first, then generates notes with Gemini when configured or deterministic mock mode when no Gemini key is available.
+FRIENDS is an AI app and project builder that turns a rough idea into a structured, runnable project package. It enhances prompts, chooses a project template, plans the build, generates code, validates output, repairs issues, and prepares the result for ZIP export.
+
+The project includes a Next.js frontend, an Express/TypeScript backend, Supabase-backed authentication and data storage, and a mock/demo path so the builder can be explored without configuring external services first.
 
 ## Features
 
-- Upload a PDF up to 10MB
-- Validate missing files, non-PDF uploads, empty files, oversized files, and unreadable scanned PDFs
-- Extract actual PDF text with `pdf-parse`
-- Generate structured notes from extracted content
-- Use Gemini through a server-only API key when available
-- Fall back to mock mode that still analyzes the extracted PDF text
-- Show provider badge, word count, page estimate, source preview, and processing status
-- Copy full formatted notes to the clipboard
-- Download notes as Markdown
-- Responsive student productivity UI
+- Landing page with launch, sign-in, and sign-up flows
+- Demo mode for using the dashboard without Supabase credentials
+- Dashboard workspace for generating new project ideas
+- Prompt enhancement and template selection workflow
+- Multi-stage generation timeline
+- Generated project preview and validation report
+- ZIP export path for generated source files
+- Supabase authentication support
+- Backend services for agents, projects, compilation, package export, and model routing
+- AI provider support for mock, Gemini, OpenAI, Anthropic, and Ollama paths
 
 ## Tech Stack
 
+### Frontend
+
 - Next.js App Router
+- React
 - TypeScript
 - Tailwind CSS
-- `pdf-parse` for server-side PDF text extraction
-- `@google/generative-ai` for Gemini notes generation
-- Vitest for helper tests
+- Framer Motion
+- Lucide icons
+- Supabase browser auth
+- Vitest
 
-## Setup
+### Backend
+
+- Express
+- TypeScript
+- Supabase admin client
+- JSZip
+- Zod
+- OpenAI, Gemini, Anthropic, Ollama provider adapters
+
+## Project Structure
+
+```text
+.
+├── frontend/              # Next.js app
+│   ├── app/               # Routes, dashboard pages, and API routes
+│   ├── components/        # UI, auth, builder, and layout components
+│   ├── lib/               # Auth, API, generation, export, and template helpers
+│   └── tests/             # Frontend helper tests
+├── backend/               # Express API
+│   ├── src/controllers/   # Route controllers
+│   ├── src/routes/        # API routes
+│   ├── src/services/      # AI, generation, export, package, and compiler services
+│   └── src/lib/           # Provider and generation utilities
+├── supabase/migrations/   # Database schema migrations
+└── render.yaml            # Render deployment config
+```
+
+## Local Setup
+
+Install frontend dependencies:
 
 ```bash
 cd frontend
 npm install
+```
+
+Install backend dependencies:
+
+```bash
+cd backend
+npm install
+```
+
+Run the frontend:
+
+```bash
+cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-## Environment
-
-Copy the example file:
+Run the backend in another terminal:
 
 ```bash
-cd frontend
-cp .env.example .env.local
+cd backend
+npm run dev
 ```
 
-Set:
-
-```bash
-GEMINI_API_KEY=your_key_here
-AI_PROVIDER=gemini
-```
-
-`GEMINI_API_KEY` is only read in the server API route. It is not exposed to the frontend.
-
-## Mock Mode
-
-If `GEMINI_API_KEY` is missing, the app uses mock mode. Mock mode does not use the file name as the source of truth and does not return a generic template. It analyzes extracted PDF text to detect title lines, headings, repeated keywords, important sections, summary points, review questions, and revision actions.
-
-## How PDF Extraction Works
-
-The API route `frontend/app/api/generate-notes/route.ts` accepts multipart `FormData`, validates the uploaded file, reads the PDF buffer, extracts text using `pdf-parse`, cleans the text, and rejects PDFs with less than 100 readable characters.
-
-If text extraction reads too little content, the API returns:
+Open the app at:
 
 ```text
-This PDF may be scanned or image-based. Text extraction could not read enough content. OCR support can be added in a future version.
+http://localhost:3000
 ```
 
-## API Output
+The backend defaults to:
 
-The notes API returns:
-
-```json
-{
-  "documentTitle": "...",
-  "provider": "gemini",
-  "summary": "...",
-  "keyPoints": ["..."],
-  "importantSections": ["..."],
-  "definitions": ["..."],
-  "examQuestions": ["..."],
-  "revisionActions": ["..."],
-  "sourcePreview": "...",
-  "wordCount": 1000,
-  "pageEstimate": 3
-}
+```text
+http://localhost:5000
 ```
 
-`provider` can be `gemini` or `mock`.
+## Environment Variables
 
-## Testing
+### Frontend
 
-Run automated helper tests:
+Create `frontend/.env.local`:
 
 ```bash
-cd frontend
-npm run test
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_API_URL=http://localhost:5000
 ```
 
-Run lint/build validation:
+Supabase is optional for demo mode. If the frontend Supabase variables are missing, normal email/password auth is disabled, but the demo flow still works.
+
+### Backend
+
+Create `backend/.env`:
+
+```bash
+PORT=5000
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+OPENAI_API_KEY=optional_openai_key
+GEMINI_API_KEY=optional_gemini_key
+ANTHROPIC_API_KEY=optional_anthropic_key
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Model-specific variables are optional. When provider credentials are not configured, FRIENDS can still use its mock generation paths.
+
+## Demo Mode
+
+Use **Continue as Demo** from the sign-in or sign-up page to enter the dashboard without creating an account. Demo mode stores a local browser flag and uses the mock builder workflow.
+
+To leave demo mode, click **Sign Out** in the dashboard.
+
+## Validation
+
+Run frontend checks:
 
 ```bash
 cd frontend
 npm run lint
+npm run test
 npm run build
 ```
 
-## Manual Test Checklist
+Run backend checks:
 
-1. Valid text PDF: upload `bmi_calculator.pdf`. Expected notes mention BMI calculator, compiled website report, website workflow, requirements, pages, UI structure, tech stack, frontend plan, backend/API plan, deployment steps, and next steps. Output must not be generic.
-2. No file selected: generate button is disabled or a clear no-file error appears.
-3. Non-PDF upload: app shows `Only PDF files are accepted.`
-4. Large PDF over 10MB: app shows `File is too large. Please upload a PDF under 10MB.`
-5. Empty or scanned PDF: app explains OCR is not supported yet.
-6. Gemini key missing: mock mode runs from extracted text and still reflects PDF content.
-7. Gemini API failure: app falls back to mock mode and does not crash.
-8. Mobile viewport: upload, status, notes, copy, and download remain usable.
-9. Copy notes: copied Markdown includes all note sections.
-10. Download Markdown: file name follows `notes-{original-pdf-name}.md`.
+```bash
+cd backend
+npm run build
+```
 
-## Limitations
+## Main User Flow
 
-- Scanned or image-only PDFs need OCR support.
-- PDF files are limited to 10MB.
-- Very long PDFs are truncated before Gemini prompting to keep requests manageable.
-- Page estimate is based on word count, not physical page metadata.
+1. Open the landing page.
+2. Choose **Launch Builder**, **Sign In**, or **Continue as Demo**.
+3. Enter the dashboard.
+4. Describe the project idea.
+5. Let FRIENDS enhance the prompt.
+6. Review and approve the enhanced prompt.
+7. Watch the generation pipeline run.
+8. Inspect the generated project preview and validation report.
+9. Download the project ZIP when export is ready.
 
-## Future Roadmap
+## Notes
 
-- OCR support for scanned PDFs
-- Multi-PDF upload
-- Topic-wise notes
-- Flashcard generation
-- Quiz generation
-- Export notes to PDF
-- Save notes history
-- User login
-- Cloud storage
-- Gemini multimodal PDF processing if supported later
-- Better citations from source text
+- Supabase migrations live in `supabase/migrations`.
+- The frontend also includes a PDF notes API route and helper tests from an earlier app workflow.
+- Generated projects are represented as isolated file maps before export. They do not overwrite the FRIENDS app source.
+- The local app is designed to remain usable without paid AI credentials through mock generation.
+
+## Roadmap
+
+- Persistent project history
+- Richer generated project previews
+- More project templates
+- Deeper validation and auto-repair
+- Better provider configuration UI
+- OCR and document-driven generation workflows
+- Deployment export presets
